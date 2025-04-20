@@ -41,6 +41,7 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
     - name: Build, tag, and push image to Amazon ECR
+      id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
@@ -142,13 +143,28 @@ jobs:
         cat << 'EOF' > deploy.sh
         #!/bin/bash
         set -ex
-        source .env
-        # Login to ECR (extract registry from full image path)
+        
+        # Load environment variables
+        if [ -f .env ]; then
+          export $(grep -v '^#' .env | xargs)
+        else
+          echo ".env file not found!"
+          exit 1
+        fi
+        
+        # Verify variables
+        echo "Using ECR Image: ${FULL_ECR_IMAGE}"
+        echo "AWS Region: ${AWS_REGION}"
+        
+        # Extract registry domain (everything before first /)
         ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'/' -f1)
-        echo "Using ECR Registry: ${ECR_REGISTRY}"
-        echo "Pulling image: ${FULL_ECR_IMAGE}"
+        echo "ECR Registry: ${ECR_REGISTRY}"
+        
+        # Login to ECR
         aws ecr get-login-password --region ${AWS_REGION} | \
-          docker login --username AWS --password-stdin ${ECR_REGISTRY}TRY
+          docker login --username AWS --password-stdin ${ECR_REGISTRY}
+        
+        # Deploy
         docker-compose -f docker-compose.prod.yml pull
         docker-compose -f docker-compose.prod.yml down || true
         docker-compose -f docker-compose.prod.yml up -d
@@ -161,13 +177,19 @@ jobs:
             docker-compose.prod.yml \
             deploy.sh \
             ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
-    - name: Execute deployment
+    - name: Deploy to EC2
       run: |
-        FULL_ECR_IMAGE="${{ steps.build-image.outputs.image }}"
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} <<EOF
-        cd /home/ubuntu/app
-        echo "FULL_ECR_IMAGE=${FULL_ECR_IMAGE}" > .env
-        echo "AWS_REGION=${{ env.AWS_REGION }}" >> .env
-        ./deploy.sh
-        EOF
+        # Get the exact image name from build step
+        FULL_IMAGE_URI="${{ steps.build-image.outputs.image }}"
+        
+        # Verify the image URI is populated
+        echo "Image URI: ${FULL_IMAGE_URI}"
+        
+        # SSH and deploy
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
+          "cd /home/ubuntu/app && \
+          echo 'FULL_ECR_IMAGE=${FULL_IMAGE_URI}' > .env && \
+          echo 'AWS_REGION=us-east-1' >> .env && \
+          cat .env && \
+          ./deploy.sh"
           
