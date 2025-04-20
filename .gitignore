@@ -132,12 +132,15 @@ celerybeat.pid
 .venv
 .terraform.lock.hcl
 .terraform/
+*.pem
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
 terraform.tfvars
+terraform.tfstate
+terraform.tfstate.backup
 
 # Spyder project settings
 .spyderproject

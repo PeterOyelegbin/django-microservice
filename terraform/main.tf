@@ -2,10 +2,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-resource "aws_ecr_repository" "app_repo" {
-  name = "django-celery-repo"
-}
-
 resource "aws_security_group" "django_sg" {
   name        = "django-microservice-sg"
   description = "Allow HTTP and SSH traffic"
