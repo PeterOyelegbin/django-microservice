@@ -151,6 +151,6 @@ jobs:
             deploy.sh \
             ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
     - name: Execute deployment
-        run: |
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
-            "cd /home/ubuntu/app && ./deploy.sh"
+      run: |
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
+          "cd /home/ubuntu/app && ./deploy.sh"
