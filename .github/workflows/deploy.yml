@@ -60,27 +60,27 @@ jobs:
         key: ${{ secrets.EC2_SSH_KEY }}
         known_hosts: 'just-a-placeholder'
     - name: Configure AWS Credentials on EC2
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            mkdir -p ~/.aws
-            cat << 'EOF' > ~/.aws/config
-            [default]
-            region = ${{ secrets.AWS_REGION }}
-            output = json
-            EOF
-            
-            cat << 'EOF' > ~/.aws/credentials
-            [default]
-            aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}
-            aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            EOF
-            
-            chmod 600 ~/.aws/credentials
-            aws sts get-caller-identity  # Verify credentials
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          mkdir -p ~/.aws
+          cat << 'EOF' > ~/.aws/config
+          [default]
+          region = ${{ secrets.AWS_REGION }}
+          output = json
+          EOF
+          
+          cat << 'EOF' > ~/.aws/credentials
+          [default]
+          aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          EOF
+          
+          chmod 600 ~/.aws/credentials
+          aws sts get-caller-identity  # Verify credentials
     - name: Prepare deployment files
       run: |
         # Get ECR repository URL from previous step
