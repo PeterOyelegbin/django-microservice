@@ -41,25 +41,17 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v1
     - name: Build, tag, and push image to Amazon ECR
-      id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        # ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
         ECR_URL: ${{ steps.build-image.outputs.image }}
         IMAGE_TAG: latest
       run: |
-        if [[ -z "$ECR_REGISTRY" ]]; then
-          echo "Error: ECR_REGISTRY is not set. Check AWS credentials and permissions."
-          exit 1
-        fi
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
-    - name: Debug ECR Image URL
-      run: |
-        echo "ECR image URL:${{ steps.build-image.outputs.image }}"
-        echo "ECR_URL:$ECR_URL"
-
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+        
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -90,15 +82,11 @@ jobs:
           EOF
           
           chmod 600 ~/.aws/credentials
-          aws sts get-caller-identity  # Verify credentials
-    - name: Debug ECR Image URL
-      run: echo "ECR image URL:${{ steps.build-image.outputs.image }}"
     - name: Prepare deployment files
       run: |
-        # Get ECR repository URL from previous step
-        FULL_ECR_IMAGE="${{ steps.build-image.outputs.image }}"
-        ECR_URL="${{ steps.build-image.outputs.image }}"
-
+        # Get ECR image URL from previous step
+        ECR_URL="${{ needs.build-and-push.outputs.image }}"
+        
         # Create production docker-compose file with the actual image URL
         echo "Creating docker-compose.yml..."
         cat << EOF > docker-compose.prod.yml
@@ -152,6 +140,12 @@ jobs:
         #!/bin/bash
         set -ex
         
+        # Load environment variables
+        source /home/ubuntu/app/.env
+
+        # Verify AWS credentials
+        aws sts get-caller-identity
+
         # Ensure that the environment variables are set correctly
         if [ -z "$FULL_ECR_IMAGE" ]; then
           echo "Error: FULL_ECR_IMAGE is empty. Make sure it's correctly set."
@@ -161,7 +155,7 @@ jobs:
         # Extract components from the FULL_ECR_IMAGE
         ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'.' -f1)
         AWS_REGION=${AWS_REGION}
-        
+  
         echo "Using ECR Registry: ${ECR_REGISTRY}"
         echo "Using AWS Region: ${AWS_REGION}"
         
@@ -179,7 +173,7 @@ jobs:
 
     - name: Copy files to EC2
       run: |
-        FULL_IMAGE_URI="${{ steps.build-image.outputs.image }}"
+        FULL_IMAGE_URI="${{ needs.build-and-push.outputs.image }}"
         echo "Copying files with image URI: ${FULL_IMAGE_URI}"
         
         scp -o StrictHostKeyChecking=no \
