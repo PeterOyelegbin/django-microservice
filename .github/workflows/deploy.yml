@@ -144,12 +144,20 @@ jobs:
         #!/bin/bash
         set -ex
         
+        # Load environment variables
+        source /home/ubuntu/app/.env
+        
         # Verify AWS credentials
         aws sts get-caller-identity
         
-        # Login to ECR
+        # Extract components from ECR image URL
+        ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'.' -f1)
         AWS_REGION=$(echo ${FULL_ECR_IMAGE} | cut -d'.' -f4)
-        ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'/' -f1)
+        
+        echo "Using ECR Registry: ${ECR_REGISTRY}"
+        echo "Using AWS Region: ${AWS_REGION}"
+        
+        # Login to ECR
         aws ecr get-login-password --region ${AWS_REGION} | \
           docker login --username AWS --password-stdin ${ECR_REGISTRY}
         
@@ -160,25 +168,27 @@ jobs:
         docker ps
         EOF
         chmod +x deploy.sh
+
     - name: Copy files to EC2
       run: |
+        FULL_IMAGE_URI="${{ steps.build-image.outputs.image }}"
+        echo "Copying files with image URI: ${FULL_IMAGE_URI}"
+        
         scp -o StrictHostKeyChecking=no \
             docker-compose.prod.yml \
             deploy.sh \
             ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
-    - name: Deploy to EC2
-      run: |
-        # Get the exact image name from build step
-        FULL_IMAGE_URI="${{ steps.build-image.outputs.image }}"
-        
-        # Verify the image URI is populated
-        echo "Image URI: ${FULL_IMAGE_URI}"
-        
-        # SSH and deploy
+            
+        # Create .env file on EC2 with the image URI
         ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
           "cd /home/ubuntu/app && \
           echo 'FULL_ECR_IMAGE=${FULL_IMAGE_URI}' > .env && \
-          echo 'AWS_REGION=us-east-1' >> .env && \
-          cat .env && \
+          echo 'AWS_REGION=${{ env.AWS_REGION }}' >> .env && \
+          cat .env"
+
+    - name: Deploy to EC2
+      run: |
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
+          "cd /home/ubuntu/app && \
+          chmod +x deploy.sh && \
           ./deploy.sh"
-          
