@@ -60,32 +60,84 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+    - name: Install SSH key
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.EC2_SSH_KEY }}
+        known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
     - name: Copy files to EC2
-      uses: appleboy/scp-action@master
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
-        source: "."
-        target: "/home/ubuntu/app"
-    - name: Deploy to EC2
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ubuntu
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          cd /home/ubuntu/app
+      run: |
+        # Create necessary files locally
+        echo "Creating docker-compose.yml..."
+        cat << 'EOL' > docker-compose.prod.yml
+        version: '3.8'
+
+        services:
+          redis:
+            image: redis:alpine
+            ports:
+              - "6379:6379"
+            volumes:
+              - redis_data:/data
+
+          worker:
+            build: .
+            command: celery -A core worker -l INFO
+            environment:
+              - REDIS_URL=${REDIS_URL}
+            depends_on:
+              - redis
+
+          web:
+            build: .
+            command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
+            ports:
+              - "8000:8000"
+            environment:
+              - REDIS_URL=${REDIS_URL}
+            depends_on:
+              - redis
+              - db
           
-          # Login to ECR
-          $(aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ steps.build-image.outputs.ecr_repository_url }})
+          db:
+            image: postgres:13-alpine
+            environment:
+              POSTGRES_DB: ${DB_NAME}
+              POSTGRES_USER: ${DB_USER}
+              POSTGRES_PASSWORD: ${DB_PASS}
+            ports:
+              - "5432:5432"
+            volumes:
+              - postgres_data:/var/lib/postgresql/data/
 
-          # Pull the latest image
-          docker pull ${{ steps.build-image.outputs.image }}
-
-          # Stop and remove existing containers
-          docker-compose down || true
-          
-          # Run new containers
-          docker-compose up -d
-
+        volumes:
+          redis_data:
+          postgres_data:
+        EOL
+        
+        # Copy files using SCP
+        scp -o StrictHostKeyChecking=no \
+            -r ./* ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
+    - name: Deploy application
+      run: |
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+        set -ex
+        cd /home/ubuntu/app
+        
+        # Login to ECR
+        aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin ${{ steps.build-image.outputs.ecr_repository_url }}
+        
+        # Pull the latest image
+        docker pull ${{ steps.build-image.outputs.image }}
+        
+        # Stop and remove existing containers
+        docker-compose -f docker-compose.prod.yml down || true
+        
+        # Run new containers
+        docker-compose -f docker-compose.prod.yml up -d
+        
+        # Verify containers are running
+        docker ps
+        EOF
+        
