@@ -46,6 +46,10 @@ jobs:
         ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
         IMAGE_TAG: latest
       run: |
+        if [[ -z "$ECR_REGISTRY" ]]; then
+          echo "Error: ECR_REGISTRY is not set. Check AWS credentials and permissions."
+          exit 1
+        fi
         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
@@ -156,7 +160,7 @@ jobs:
             ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
     - name: Execute deployment
       run: |
-        ECR_URL="${{ steps.build-image.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
+        ECR_URL="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
         ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
           "cd /home/ubuntu/app && \
           export ECR_URL='${ECR_URL}' && \
