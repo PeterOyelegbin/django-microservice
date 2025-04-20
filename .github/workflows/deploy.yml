@@ -65,11 +65,14 @@ jobs:
       with:
         key: ${{ secrets.EC2_SSH_KEY }}
         known_hosts: 'just-a-placeholder-so-we-dont-get-errors'
-    - name: Copy files to EC2
+    - name: Prepare deployment files
       run: |
-        # Create necessary files locally
+        # Get ECR repository URL from previous step
+        ECR_URL="${{ steps.build-image.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
+
+        # Create production docker-compose file
         echo "Creating docker-compose.yml..."
-        cat << 'EOL' > docker-compose.prod.yml
+        cat << 'EOF' > docker-compose.prod.yml
         version: '3.8'
 
         services:
@@ -113,31 +116,46 @@ jobs:
         volumes:
           redis_data:
           postgres_data:
-        EOL
-        
-        # Copy files using SCP
-        scp -o StrictHostKeyChecking=no \
-            -r ./* ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
-    - name: Deploy application
-      run: |
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+        EOF
+
+        # Create deployment script with hardcoded values
+        cat << 'EOF' > deploy.sh
+        #!/bin/bash
         set -ex
-        cd /home/ubuntu/app
-        
+
         # Login to ECR
-        aws ecr get-login-password --region $AWS_REGION | \
-          docker login --username AWS --password-stdin ${{ steps.build-image.outputs.ecr_repository_url }}
-        
+        aws ecr get-login-password --region $1 | \
+          docker login --username AWS --password-stdin $2
+
         # Pull the latest image
-        docker pull ${{ steps.build-image.outputs.image }}
-        
+        docker pull $3
+
         # Stop and remove existing containers
         docker-compose -f docker-compose.prod.yml down || true
-        
+
         # Run new containers
         docker-compose -f docker-compose.prod.yml up -d
-        
+
         # Verify containers are running
         docker ps
         EOF
-        
+
+        chmod +x deploy.sh
+      env:
+        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+    - name: Copy files to EC2
+      run: |
+        scp -o StrictHostKeyChecking=no \
+            docker-compose.prod.yml \
+            deploy.sh \
+            ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
+    - name: Execute deployment
+      run: |
+        ECR_URL="${{ steps.build-image.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
+          "cd /home/ubuntu/app && \
+          ./deploy.sh \
+          '${{ env.AWS_REGION }}' \
+          '${{ steps.build-image.outputs.registry }}' \
+          '$ECR_URL'"
+          
