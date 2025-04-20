@@ -138,6 +138,10 @@ jobs:
         cat << 'EOF' > deploy.sh
         #!/bin/bash
         set -ex
+        ECR_URL=${ECR_URL:-$1}
+        aws ecr get-login-password --region ${AWS_REGION:-us-east-1} | \
+          docker login --username AWS --password-stdin ${ECR_URL%%/*}
+        sed -i "s|image: .*|image: ${ECR_URL}|g" docker-compose.prod.yml
         docker-compose -f docker-compose.prod.yml pull
         docker-compose -f docker-compose.prod.yml down || true
         docker-compose -f docker-compose.prod.yml up -d
@@ -152,5 +156,10 @@ jobs:
             ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
     - name: Execute deployment
       run: |
+        ECR_URL="${{ steps.build-image.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest"
         ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
-          "cd /home/ubuntu/app && ./deploy.sh"
+          "cd /home/ubuntu/app && \
+          export ECR_URL='${ECR_URL}' && \
+          export AWS_REGION='${{ env.AWS_REGION }}' && \
+          ./deploy.sh"
+          
