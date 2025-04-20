@@ -28,8 +28,6 @@ jobs:
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
-    outputs:
-      ecr-image-url: ${{ steps.build-image.outputs.ecr_image_url }}
     steps:
     - uses: actions/checkout@v2
     - name: Login to Docker Hub
@@ -38,10 +36,19 @@ jobs:
         username: ${{ secrets.DOCKER_HUB_USERNAME }}
         password: ${{ secrets.DOCKER_HUB_TOKEN }}
     - name: Build and push Docker image
+      env:
+        EMAIL_HOST: ${{ vars.EMAIL_HOST }}
+        EMAIL_PORT: ${{ vars.EMAIL_PORT }}
+        EMAIL_HOST_USER: ${{ vars.EMAIL_HOST_USER }}
+        EMAIL_HOST_PASSWORD: ${{ vars.EMAIL_HOST_PASSWORD }}
       run: |
-        docker build -t ${{ env.DOCKER_HUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} .
+        docker build \
+          --build-arg EMAIL_HOST=$EMAIL_HOST \
+          --build-arg EMAIL_PORT=$EMAIL_PORT \
+          --build-arg EMAIL_HOST_USER=$EMAIL_HOST_USER \
+          --build-arg EMAIL_HOST_PASSWORD=$EMAIL_HOST_PASSWORD \
+          -t ${{ env.DOCKER_HUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }} .
         docker push ${{ env.DOCKER_HUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }}
-        echo "image=${{ env.DOCKER_HUB_REPOSITORY }}:${{ env.DOCKER_IMAGE_TAG }}" >> $GITHUB_OUTPUT
 
   deploy:
     needs: build-and-push
@@ -54,9 +61,8 @@ jobs:
         known_hosts: 'just-a-placeholder'
     - name: Prepare deployment files
       run: |
-        # Create production docker-compose file
-        echo "Creating docker-compose.yml..."
-        cat << EOF > docker-compose.prod.yml
+        # Create production docker-compose file with environment variables
+        cat << 'EOF' > docker-compose.prod.yml
         version: '3.8'
 
         services:
@@ -72,6 +78,10 @@ jobs:
             command: celery -A core worker -l INFO
             environment:
               - REDIS_URL=redis://redis:6379/0
+              - EMAIL_HOST
+              - EMAIL_PORT
+              - EMAIL_HOST_USER
+              - EMAIL_HOST_PASSWORD
             depends_on:
               - redis
 
@@ -82,6 +92,10 @@ jobs:
               - "8000:8000"
             environment:
               - REDIS_URL=redis://redis:6379/0
+              - EMAIL_HOST
+              - EMAIL_PORT
+              - EMAIL_HOST_USER
+              - EMAIL_HOST_PASSWORD
             depends_on:
               - redis
               - db
@@ -106,29 +120,45 @@ jobs:
         cat << 'EOF' > deploy.sh
         #!/bin/bash
         set -ex
+        
+        # Create .env file from environment
+        cat << EOL > .env
+        EMAIL_HOST=${EMAIL_HOST}
+        EMAIL_PORT=${EMAIL_PORT}
+        EMAIL_HOST_USER=${EMAIL_HOST_USER}
+        EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+        EOL
+        
         docker-compose -f docker-compose.prod.yml pull
         docker-compose -f docker-compose.prod.yml down || true
-        docker-compose -f docker-compose.prod.yml up -d
-
+        docker-compose -f docker-compose.prod.yml --env-file .env up -d
+        
         sleep 10
-        
+
         docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput
-        
+
         docker ps
         EOF
         chmod +x deploy.sh
 
     - name: Copy files to EC2
       run: |
-        FULL_IMAGE_URI="${{ needs.build-and-push.outputs.ecr-image-url }}"
-        echo "Copying files with image URI: ${FULL_IMAGE_URI}"
-        
         scp -o StrictHostKeyChecking=no \
             docker-compose.prod.yml \
             deploy.sh \
             ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
+
     - name: Execute deployment
+      env:
+        EMAIL_HOST: ${{ vars.EMAIL_HOST }}
+        EMAIL_PORT: ${{ vars.EMAIL_PORT }}
+        EMAIL_HOST_USER: ${{ vars.EMAIL_HOST_USER }}
+        EMAIL_HOST_PASSWORD: ${{ vars.EMAIL_HOST_PASSWORD }}
       run: |
         ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
           "cd /home/ubuntu/app && \
+          export EMAIL_HOST='$EMAIL_HOST' && \
+          export EMAIL_PORT='$EMAIL_PORT' && \
+          export EMAIL_HOST_USER='$EMAIL_HOST_USER' && \
+          export EMAIL_HOST_PASSWORD='$EMAIL_HOST_PASSWORD' && \
           ./deploy.sh"
