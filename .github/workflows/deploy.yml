@@ -60,10 +60,14 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-    - name: Install AWS CLI
-    run: |
-      sudo apt-get update
-      sudo apt-get install -y awscli
+    - name: Copy files to EC2
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        source: "."
+        target: "/home/ubuntu/app"
     - name: Deploy to EC2
       uses: appleboy/ssh-action@master
       with:
@@ -71,13 +75,17 @@ jobs:
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          # Pull the latest image
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
-          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          cd /home/ubuntu/app
           
+          # Login to ECR
+          $(aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ steps.build-image.outputs.ecr_repository_url }})
+
+          # Pull the latest image
+          docker pull ${{ steps.build-image.outputs.image }}
+
           # Stop and remove existing containers
           docker-compose down || true
           
           # Run new containers
           docker-compose up -d
-          
+
