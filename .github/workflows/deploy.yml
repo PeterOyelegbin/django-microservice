@@ -44,7 +44,8 @@ jobs:
       id: build-image
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        # ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+        ECR_URL: ${{ steps.build-image.outputs.image }}
         IMAGE_TAG: latest
       run: |
         if [[ -z "$ECR_REGISTRY" ]]; then
@@ -57,7 +58,7 @@ jobs:
     - name: Debug ECR Image URL
       run: |
         echo "ECR image URL:${{ steps.build-image.outputs.image }}"
-        echo "ECR_REGISTRY:${{ env.ECR_REGISTRY }}"
+        echo "ECR_URL:$ECR_URL"
 
   deploy:
     needs: build-and-push
