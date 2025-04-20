@@ -60,6 +60,28 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+    - name: Configure AWS Credentials on EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            mkdir -p ~/.aws
+            cat << 'EOF' > ~/.aws/config
+            [default]
+            region = ${{ secrets.AWS_REGION }}
+            output = json
+            EOF
+            
+            cat << 'EOF' > ~/.aws/credentials
+            [default]
+            aws_access_key_id = ${{ secrets.AWS_ACCESS_KEY_ID }}
+            aws_secret_access_key = ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            EOF
+            
+            chmod 600 ~/.aws/credentials
+            aws sts get-caller-identity  # Verify credentials
     - name: Install SSH key
       uses: shimataro/ssh-key-action@v2
       with:
