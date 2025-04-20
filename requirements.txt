@@ -1,0 +1,12 @@
+python-decouple==3.*
+Django==4.*
+djangorestframework==3.*
+django-cors-headers==4.*
+djangorestframework-simplejwt[crypto]==5.*
+celery==5.*
+django_celery_results==2.*
+redis==5.*
+drf-yasg==1.21.7
+psycopg2-binary==2.9.5
+whitenoise==6.6.0
+gunicorn==22.0.0
