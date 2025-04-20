@@ -86,9 +86,12 @@ jobs:
           
           chmod 600 ~/.aws/credentials
           aws sts get-caller-identity  # Verify credentials
+    - name: Debug ECR Image URL
+      run: echo "ECR image URL: ${{ steps.build-image.outputs.image }}"
     - name: Prepare deployment files
       run: |
         # Get ECR repository URL from previous step
+        FULL_ECR_IMAGE="${{ steps.build-image.outputs.image }}"
         ECR_URL="${{ steps.build-image.outputs.image }}"
 
         # Create production docker-compose file with the actual image URL
@@ -144,15 +147,15 @@ jobs:
         #!/bin/bash
         set -ex
         
-        # Load environment variables
-        source /home/ubuntu/app/.env
+        # Ensure that the environment variables are set correctly
+        if [ -z "$FULL_ECR_IMAGE" ]; then
+          echo "Error: FULL_ECR_IMAGE is empty. Make sure it's correctly set."
+          exit 1
+        fi
         
-        # Verify AWS credentials
-        aws sts get-caller-identity
-        
-        # Extract components from ECR image URL
+        # Extract components from the FULL_ECR_IMAGE
         ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'.' -f1)
-        AWS_REGION=$(echo ${FULL_ECR_IMAGE} | cut -d'.' -f4)
+        AWS_REGION=${AWS_REGION}
         
         echo "Using ECR Registry: ${ECR_REGISTRY}"
         echo "Using AWS Region: ${AWS_REGION}"
