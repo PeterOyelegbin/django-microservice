@@ -87,7 +87,7 @@ jobs:
           chmod 600 ~/.aws/credentials
           aws sts get-caller-identity  # Verify credentials
     - name: Debug ECR Image URL
-      run: echo "ECR image URL: ${{ steps.build-image.outputs.image }}"
+      run: echo "ECR image URL:${{ steps.build-image.outputs.image }}"
     - name: Prepare deployment files
       run: |
         # Get ECR repository URL from previous step
