@@ -104,7 +104,7 @@ jobs:
               - redis_data:/data
 
           worker:
-            image: ${ECR_URL}
+            image: ${FULL_ECR_IMAGE}
             command: celery -A core worker -l INFO
             environment:
               - REDIS_URL=redis://redis:6379/0
@@ -112,7 +112,7 @@ jobs:
               - redis
 
           web:
-            image: ${ECR_URL}
+            image: ${FULL_ECR_IMAGE}
             command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
             ports:
               - "8000:8000"
@@ -142,10 +142,13 @@ jobs:
         cat << 'EOF' > deploy.sh
         #!/bin/bash
         set -ex
-        ECR_REGISTRY=${ECR_URL%%/*}
-        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
-        sed -i "s|image: .*|image: ${ECR_URL}|g" docker-compose.prod.yml
-        154517339571.dkr.ecr.us-east-1.amazonaws.com/django-celery-repo
+        source .env
+        # Login to ECR (extract registry from full image path)
+        ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'/' -f1)
+        echo "Using ECR Registry: ${ECR_REGISTRY}"
+        echo "Pulling image: ${FULL_ECR_IMAGE}"
+        aws ecr get-login-password --region ${AWS_REGION} | \
+          docker login --username AWS --password-stdin ${ECR_REGISTRY}TRY
         docker-compose -f docker-compose.prod.yml pull
         docker-compose -f docker-compose.prod.yml down || true
         docker-compose -f docker-compose.prod.yml up -d
@@ -160,10 +163,11 @@ jobs:
             ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/app/
     - name: Execute deployment
       run: |
-        ECR_URL="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
-        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} \
-          "cd /home/ubuntu/app && \
-          export ECR_URL='${ECR_URL}' && \
-          export AWS_REGION='${{ env.AWS_REGION }}' && \
-          ./deploy.sh"
+        FULL_ECR_IMAGE="${{ steps.build-image.outputs.image }}"
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} <<EOF
+        cd /home/ubuntu/app
+        echo "FULL_ECR_IMAGE=${FULL_ECR_IMAGE}" > .env
+        echo "AWS_REGION=${{ env.AWS_REGION }}" >> .env
+        ./deploy.sh
+        EOF
           
