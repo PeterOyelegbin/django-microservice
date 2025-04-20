@@ -111,8 +111,8 @@ jobs:
         docker-compose -f docker-compose.prod.yml up -d
 
         sleep 10
-
-        docker-compose -f docker-compose.prod.yml exec web python manage.py migrate --noinput
+        
+        docker-compose -f docker-compose.prod.yml exec -T web python manage.py migrate --noinput
         
         docker ps
         EOF
