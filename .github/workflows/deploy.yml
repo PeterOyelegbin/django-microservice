@@ -91,9 +91,9 @@ jobs:
         # Get ECR repository URL from previous step
         ECR_URL="${{ steps.build-image.outputs.image }}"
 
-        # Create production docker-compose file
+        # Create production docker-compose file with the actual image URL
         echo "Creating docker-compose.yml..."
-        cat << 'EOF' > docker-compose.prod.yml
+        cat << EOF > docker-compose.prod.yml
         version: '3.8'
 
         services:
@@ -105,7 +105,7 @@ jobs:
               - redis_data:/data
 
           worker:
-            image: ${FULL_ECR_IMAGE}
+            image: ${ECR_URL}
             command: celery -A core worker -l INFO
             environment:
               - REDIS_URL=redis://redis:6379/0
@@ -113,7 +113,7 @@ jobs:
               - redis
 
           web:
-            image: ${FULL_ECR_IMAGE}
+            image: ${ECR_URL}
             command: gunicorn core.wsgi:application --bind 0.0.0.0:8000
             ports:
               - "8000:8000"
@@ -144,23 +144,12 @@ jobs:
         #!/bin/bash
         set -ex
         
-        # Load environment variables
-        if [ -f .env ]; then
-          export $(grep -v '^#' .env | xargs)
-        else
-          echo ".env file not found!"
-          exit 1
-        fi
-        
-        # Verify variables
-        echo "Using ECR Image: ${FULL_ECR_IMAGE}"
-        echo "AWS Region: ${AWS_REGION}"
-        
-        # Extract registry domain (everything before first /)
-        ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'/' -f1)
-        echo "ECR Registry: ${ECR_REGISTRY}"
+        # Verify AWS credentials
+        aws sts get-caller-identity
         
         # Login to ECR
+        AWS_REGION=$(echo ${FULL_ECR_IMAGE} | cut -d'.' -f4)
+        ECR_REGISTRY=$(echo ${FULL_ECR_IMAGE} | cut -d'/' -f1)
         aws ecr get-login-password --region ${AWS_REGION} | \
           docker login --username AWS --password-stdin ${ECR_REGISTRY}
         
