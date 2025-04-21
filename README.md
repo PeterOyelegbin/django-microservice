@@ -18,7 +18,7 @@ Practical Assessment for AWS Developer Role
 ## Local Development Setup
 1. Fork and clone the repository:
 ```bash
-git clone https://github.com/<username>/hng_boilerplate_python_fastapi_web.git
+git clone https://github.com/PeterOyelegbin/django-microservice.git
 cd django-microservice
 ```
 
